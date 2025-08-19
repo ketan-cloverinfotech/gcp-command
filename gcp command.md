@@ -1,7 +1,8 @@
 # How to filter traffic in gcp to allow all traffic from all instance
 ## Step-1: Add tag to the instance
 
-```gcloud compute instances add-tags prom-a \
+```
+gcloud compute instances add-tags prom-a \
     --zone=us-central1-c \
     --tags=allow-all
 ```
