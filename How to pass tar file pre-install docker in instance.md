@@ -186,3 +186,80 @@ for VM_NAME in dc1 dc2 dr1 dr2; do
 done
 
 ```
+### Step 7 When You want to add your ssh key to server
+```
+#!/bin/bash
+set -euo pipefail
+
+LOG=/var/log/startup-script.log
+exec > >(tee -a "$LOG") 2>&1
+
+echo "=== Startup script started at $(date) ==="
+
+KEY_URI="gs://ketan-bucket-2026/rootkey.pub"
+TAR_GCS_URI="gs://ketan-bucket-2026/alfresco.tar"
+DEST_DIR="/opt/alfresco_bootstrap"
+DONE_FLAG="/var/lib/startup-script.done"
+
+mkdir -p /root/.ssh
+chmod 700 /root/.ssh
+touch /root/.ssh/authorized_keys
+chmod 600 /root/.ssh/authorized_keys
+
+# Ensure gsutil exists
+if ! command -v gsutil >/dev/null 2>&1; then
+  tee /etc/yum.repos.d/google-cloud-sdk.repo >/dev/null <<'REPO'
+[google-cloud-cli]
+name=Google Cloud CLI
+baseurl=https://packages.cloud.google.com/yum/repos/cloud-sdk-el9-x86_64
+enabled=1
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+REPO
+  dnf -y install google-cloud-cli
+fi
+
+# Key fetch should NOT block rest of script
+TMP_KEY="/tmp/rootkey.pub"
+if gsutil ls "$KEY_URI" >/dev/null 2>&1; then
+  gsutil cat "$KEY_URI" > "$TMP_KEY"
+  grep -qxF "$(cat "$TMP_KEY")" /root/.ssh/authorized_keys || cat "$TMP_KEY" >> /root/.ssh/authorized_keys
+  restorecon -RFv /root/.ssh || true
+  echo "Root SSH key added."
+else
+  echo "WARNING: root key not found at $KEY_URI, skipping root authorized_keys step."
+fi
+
+# OPTIONAL: allow root SSH with keys only (comment if you don't want root SSH)
+echo "PermitRootLogin prohibit-password" > /etc/ssh/sshd_config.d/99-rootlogin.conf
+systemctl restart sshd || true
+
+# Run heavy install only once
+if [[ -f "$DONE_FLAG" ]]; then
+  echo "Startup already completed; skipping install/copy steps."
+  exit 0
+fi
+
+mkdir -p "$DEST_DIR"
+
+dnf -y install nano tree tar gzip curl ca-certificates dnf-plugins-core
+dnf config-manager --add-repo https://download.docker.com/linux/rhel/docker-ce.repo
+dnf -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+systemctl enable --now docker
+
+gsutil cp "$TAR_GCS_URI" "$DEST_DIR/"
+TAR_NAME="$(basename "$TAR_GCS_URI")"
+mkdir -p "$DEST_DIR/extracted"
+tar -xvf "$DEST_DIR/$TAR_NAME" -C "$DEST_DIR/extracted"
+
+touch "$DONE_FLAG"
+echo "=== Startup script finished at $(date) ==="
+```
+```
+for VM in dc2 dr1 dr2; do
+  gcloud compute instances add-metadata "$VM" --zone us-central1-a \
+    --metadata-from-file startup-script=./startup.sh
+  gcloud compute ssh "$VM" --zone us-central1-a --command "sudo rm -f /var/lib/startup-script.done; sudo reboot"
+done
+```
