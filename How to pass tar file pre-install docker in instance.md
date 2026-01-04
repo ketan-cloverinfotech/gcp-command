@@ -274,3 +274,8 @@ for VM in dc1 dc2 dr1 dr2; do
     --metadata-from-file startup-script=./startup.sh
 done
 ```
+## Verify logs of One VMs
+```
+gcloud compute ssh dc1 --zone us-central1-a --command \
+"sudo tail -n 80 /var/log/startup-script.log; sudo tail -n 3 /root/.ssh/authorized_keys; sudo docker --version; sudo ls -lah /opt/alfresco_bootstrap"
+```
