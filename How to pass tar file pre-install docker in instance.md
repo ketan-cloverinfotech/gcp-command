@@ -257,9 +257,20 @@ touch "$DONE_FLAG"
 echo "=== Startup script finished at $(date) ==="
 ```
 ```
-for VM in dc2 dr1 dr2; do
-  gcloud compute instances add-metadata "$VM" --zone us-central1-a \
+ZONE="us-central1-a"
+MACHINE_TYPE="e2-standard-2"
+PROJECT_ID="$(gcloud config get-value project)"
+SA_EMAIL="vm-bootstrap-sa@$PROJECT_ID.iam.gserviceaccount.com"
+
+for VM in dc1 dc2 dr1 dr2; do
+  echo "Creating $VM..."
+  gcloud compute instances create "$VM" \
+    --zone="$ZONE" \
+    --machine-type="$MACHINE_TYPE" \
+    --image-family="rhel-9" \
+    --image-project="rhel-cloud" \
+    --service-account="$SA_EMAIL" \
+    --scopes="https://www.googleapis.com/auth/cloud-platform" \
     --metadata-from-file startup-script=./startup.sh
-  gcloud compute ssh "$VM" --zone us-central1-a --command "sudo rm -f /var/lib/startup-script.done; sudo reboot"
 done
 ```
